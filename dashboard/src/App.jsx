@@ -3,7 +3,7 @@ import {
   Activity, Droplets, Thermometer, Battery, BatteryCharging, 
   Sun, Wifi, Server, Monitor, Play, Square, RotateCcw, 
   Menu, Settings, BarChart2, Clock, ShieldAlert, CheckCircle,
-  AlertTriangle, Link2, Link2Off
+  AlertTriangle, Link2, Link2Off, Lightbulb, FlaskConical, Flame, Wind
 } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -45,6 +45,238 @@ const getTurbidityStatus = (turbidity) => {
 const getTempStatus = (temp) => {
   if (temp >= THRESHOLDS.TEMP_MIN && temp <= THRESHOLDS.TEMP_MAX) return 'NORMAL';
   return 'OUT OF RANGE';
+};
+
+// ─── Recommendation Engine ───────────────────────────────────────────────────
+const getRecommendations = (tds, turbidity, temperature) => {
+  const recs = [];
+
+  // ── TDS recommendations ──────────────────────────────────────────────────
+  if (tds === 0 && turbidity === 0 && temperature === 0) {
+    recs.push({
+      id: 'no-data',
+      level: 'info',
+      icon: FlaskConical,
+      title: 'Awaiting Sensor Data',
+      detail: 'Connect your ESP32 and start monitoring to receive water quality recommendations.',
+    });
+    return recs;
+  }
+
+  if (tds <= 50) {
+    recs.push({
+      id: 'tds-very-low',
+      level: 'attention',
+      icon: Droplets,
+      title: 'TDS Extremely Low',
+      detail: `${tds} ppm — Water may be over-filtered (RO/distilled). Consider adding a mineral cartridge to restore essential minerals for drinking.`,
+    });
+  } else if (tds <= 300) {
+    recs.push({
+      id: 'tds-normal',
+      level: 'safe',
+      icon: Droplets,
+      title: 'TDS Level: Excellent',
+      detail: `${tds} ppm — TDS is within the ideal range (50–300 ppm). Water is suitable for drinking and daily use.`,
+    });
+  } else if (tds <= 600) {
+    recs.push({
+      id: 'tds-attention',
+      level: 'attention',
+      icon: Droplets,
+      title: 'TDS Level: Elevated',
+      detail: `${tds} ppm — Slightly above ideal. Consider using a carbon block or RO filter to reduce dissolved solids before drinking.`,
+    });
+  } else if (tds <= 900) {
+    recs.push({
+      id: 'tds-high',
+      level: 'warning',
+      icon: Droplets,
+      title: 'TDS Level: High',
+      detail: `${tds} ppm — Exceeds WHO guideline of 600 ppm. Use reverse osmosis filtration. Avoid for drinking without treatment.`,
+    });
+  } else {
+    recs.push({
+      id: 'tds-critical',
+      level: 'danger',
+      icon: Droplets,
+      title: 'TDS Level: Critical — Do Not Drink',
+      detail: `${tds} ppm — Extremely high dissolved solids. Water poses a serious health risk. Do not use for drinking or cooking. Investigate contamination source immediately.`,
+    });
+  }
+
+  // ── Turbidity recommendations ─────────────────────────────────────────────
+  if (turbidity < 1) {
+    recs.push({
+      id: 'turb-crystal',
+      level: 'safe',
+      icon: Wind,
+      title: 'Turbidity: Crystal Clear',
+      detail: `${turbidity} NTU — Water is visually clear. No suspended particles detected.`,
+    });
+  } else if (turbidity < 10) {
+    recs.push({
+      id: 'turb-normal',
+      level: 'safe',
+      icon: Wind,
+      title: 'Turbidity: Acceptable',
+      detail: `${turbidity} NTU — Within the WHO limit of 1 NTU for drinking and 5 NTU for treated water. Suitable for general use.`,
+    });
+  } else if (turbidity < 30) {
+    recs.push({
+      id: 'turb-cloudy',
+      level: 'attention',
+      icon: Wind,
+      title: 'Turbidity: Cloudy',
+      detail: `${turbidity} NTU — Sediment or particles detected. Run through a sediment pre-filter or let water settle before use. Do not drink without filtration.`,
+    });
+  } else {
+    recs.push({
+      id: 'turb-dirty',
+      level: 'danger',
+      icon: Wind,
+      title: 'Turbidity: Very High — Unsafe',
+      detail: `${turbidity} NTU — Water is heavily contaminated with suspended matter. Immediate multi-stage filtration (sediment → carbon → UV) required. May indicate sewage or runoff contamination.`,
+    });
+  }
+
+  // ── Temperature recommendations ───────────────────────────────────────────
+  if (temperature < 10) {
+    recs.push({
+      id: 'temp-cold',
+      level: 'attention',
+      icon: Thermometer,
+      title: 'Water Temperature: Too Cold',
+      detail: `${temperature}°C — Very cold water can cause pipe condensation and affect taste. Check for unusual cold-water inflow or environmental exposure.`,
+    });
+  } else if (temperature <= 25) {
+    recs.push({
+      id: 'temp-normal',
+      level: 'safe',
+      icon: Thermometer,
+      title: 'Water Temperature: Ideal',
+      detail: `${temperature}°C — Temperature is within the optimal range (10–25°C), reducing risk of bacterial growth.`,
+    });
+  } else if (temperature <= 35) {
+    recs.push({
+      id: 'temp-warm',
+      level: 'attention',
+      icon: Thermometer,
+      title: 'Water Temperature: Warm',
+      detail: `${temperature}°C — Slightly warm. Warm water accelerates bacterial growth. If stored, ensure proper covered containers and use quickly.`,
+    });
+  } else {
+    recs.push({
+      id: 'temp-hot',
+      level: 'danger',
+      icon: Flame,
+      title: 'Water Temperature: Dangerously High',
+      detail: `${temperature}°C — Temperature exceeds safe limits. Risk of Legionella and other pathogens. Do not consume. Investigate heat source and cool water supply immediately.`,
+    });
+  }
+
+  return recs;
+};
+
+const LEVEL_STYLES = {
+  safe:      { border: 'rgba(16,185,129,0.3)',  bg: 'rgba(16,185,129,0.07)',  color: 'var(--status-green)',  label: 'SAFE' },
+  info:      { border: 'rgba(96,165,250,0.3)',   bg: 'rgba(96,165,250,0.07)',  color: 'var(--accent-light)',  label: 'INFO' },
+  attention: { border: 'rgba(245,158,11,0.3)',   bg: 'rgba(245,158,11,0.07)', color: 'var(--status-orange)', label: 'ATTENTION' },
+  warning:   { border: 'rgba(245,158,11,0.5)',   bg: 'rgba(245,158,11,0.12)', color: 'var(--status-orange)', label: 'WARNING' },
+  danger:    { border: 'rgba(239,68,68,0.4)',    bg: 'rgba(239,68,68,0.08)',  color: 'var(--status-red)',    label: 'DANGER' },
+};
+
+const RecommendationPanel = ({ tds, turbidity, temperature }) => {
+  const recs = useMemo(() => getRecommendations(tds, turbidity, temperature), [tds, turbidity, temperature]);
+  const hasIssue = recs.some(r => r.level === 'danger' || r.level === 'warning');
+  const allSafe  = recs.every(r => r.level === 'safe');
+
+  return (
+    <div className="glass-panel">
+      <div className="panel-header">
+        <div className="panel-title">
+          <Lightbulb size={18} />
+          Water Quality Recommendations
+        </div>
+        <span
+          className={`badge badge-${hasIssue ? 'high' : allSafe ? 'normal' : 'attention'}`}
+          style={{ fontSize: '0.65rem', letterSpacing: '0.08em' }}
+        >
+          {hasIssue ? 'ACTION REQUIRED' : allSafe ? 'ALL CLEAR' : 'REVIEW ADVISED'}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {recs.map((rec) => {
+          const s = LEVEL_STYLES[rec.level];
+          const Icon = rec.icon;
+          return (
+            <div
+              key={rec.id}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '1rem',
+                padding: '1rem 1.25rem',
+                borderRadius: '12px',
+                border: `1px solid ${s.border}`,
+                backgroundColor: s.bg,
+                transition: 'transform 0.2s',
+              }}
+            >
+              <div
+                style={{
+                  flexShrink: 0,
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  background: s.bg,
+                  border: `1px solid ${s.border}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: s.color,
+                }}
+              >
+                <Icon size={18} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.6rem',
+                    marginBottom: '0.3rem',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: '0.9rem', color: s.color }}>
+                    {rec.title}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.6rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.1em',
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      border: `1px solid ${s.border}`,
+                      color: s.color,
+                      backgroundColor: s.bg,
+                    }}
+                  >
+                    {s.label}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
+                  {rec.detail}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 };
 
 const SensorCard = ({ title, value, unit, icon: Icon, status, trend }) => (
@@ -282,22 +514,93 @@ export default function App() {
           </div>
 
           <div className="cards-grid" style={{ gridTemplateColumns: '2fr 1fr' }}>
-            <div className="glass-panel status-panel">
-              <div className="status-info">
-                <div className="panel-title">WATER QUALITY STATUS</div>
-                <div className={`status-large-badge ${overallStatusClass}`}>
-                  <StatusIcon size={32} />
-                  {overallStatusLabel}
+            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1.75rem' }}>
+              {/* Top row: status badge + TDS/Turbidity readings */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div className="panel-title">WATER QUALITY STATUS</div>
+                  <div className={`status-large-badge ${overallStatusClass}`}>
+                    <StatusIcon size={32} />
+                    {overallStatusLabel}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem', lineHeight: 1.5 }}>
+                    All measured parameters are within the recommended limits for drinking water.<br />
+                    <span style={{ color: 'rgba(96,165,250,0.7)' }}>* Based on WHO drinking water quality guidelines.</span>
+                  </div>
                 </div>
-                <div className="status-disclaimer">
-                  * Note: TDS and Turbidity indicate basic water quality. Additional biological testing is required to confirm if water is safe to drink.
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'right', flexShrink: 0 }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>TDS / Turbidity</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 600 }}>{currentData.tds} <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>ppm</span></span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 600 }}>{currentData.turbidity} <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>NTU</span></span>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'right' }}>
-                 <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>TDS / Turbidity</span>
-                 <span style={{ fontSize: '1.5rem', fontWeight: 600 }}>{currentData.tds} <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>ppm</span></span>
-                 <span style={{ fontSize: '1.5rem', fontWeight: 600 }}>{currentData.turbidity} <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>NTU</span></span>
-              </div>
+
+              {/* Inline Water Recommendation Box */}
+              {(() => {
+                const recs = getRecommendations(currentData.tds, currentData.turbidity, currentData.temperature);
+                const topRec = recs.find(r => r.level === 'danger') ||
+                               recs.find(r => r.level === 'warning') ||
+                               recs.find(r => r.level === 'attention') ||
+                               recs[0];
+                const s = LEVEL_STYLES[topRec?.level || 'safe'];
+                const RecIcon = topRec?.icon || CheckCircle;
+
+                // Pick a single summary sentence based on overall status
+                const summaryBold = overallStatusClass === 'normal'
+                  ? 'The water quality is good and safe for drinking.'
+                  : overallStatusClass === 'attention'
+                  ? 'Water quality needs attention before use.'
+                  : 'Water is unsafe — do not drink.';
+                const summaryDetail = overallStatusClass === 'normal'
+                  ? 'You can use this water for drinking, cooking and other daily purposes.'
+                  : overallStatusClass === 'attention'
+                  ? topRec?.detail || 'Review the individual sensor readings for remediation steps.'
+                  : topRec?.detail || 'Immediately stop use and investigate the contamination source.';
+
+                return (
+                  <div style={{
+                    borderRadius: '12px',
+                    border: `1px solid ${s.border}`,
+                    backgroundColor: s.bg,
+                    overflow: 'hidden',
+                  }}>
+                    {/* Header strip */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      padding: '0.6rem 1rem',
+                      borderBottom: `1px solid ${s.border}`,
+                      backgroundColor: `${s.bg}`,
+                    }}>
+                      <RecIcon size={16} style={{ color: s.color }} />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.1em', color: s.color }}>WATER RECOMMENDATION</span>
+                    </div>
+                    {/* Body */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.9rem 1rem' }}>
+                      <div style={{
+                        flexShrink: 0,
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        background: s.bg,
+                        border: `2px solid ${s.color}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: s.color,
+                        marginTop: '2px',
+                      }}>
+                        <RecIcon size={14} />
+                      </div>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: '0.875rem', color: s.color, marginBottom: '0.2rem' }}>{summaryBold}</p>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>{summaryDetail}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="glass-panel">
@@ -402,6 +705,7 @@ export default function App() {
               </ResponsiveContainer>
             </div>
           </div>
+
 
           <div className="glass-panel">
             <div className="panel-header">
